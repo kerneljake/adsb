@@ -1,6 +1,6 @@
 # adsb
 
-Read [dump1090](https://github.com/MalcolmRobb/dump1090.git) data from a stream and insert it into MongoDB.
+Read [dump1090](https://github.com/MalcolmRobb/dump1090.git) data from a [stream](http://woodair.net/SBS/Article/Barebones42_Socket_Data.htm) and insert it into MongoDB.
 
 
 #### Read from dump1090's port 30003 ####
