@@ -1,0 +1,15 @@
+{
+  "name": "schema_test",
+  "version": "1.0.0",
+  "description": "Workbench to test performance of various IoT schemas",
+  "main": "schemaTest.js",
+  "dependencies": {
+    "step": "0.0.6"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "schemaTest"
+  },
+  "author": "Jay Runkel",
+  "license": "ISC"
+}
