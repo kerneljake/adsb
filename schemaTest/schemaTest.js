@@ -1,13 +1,44 @@
 
-// command line arguments
-var batchSize = 100;		// Size of batches used for mongodb inserts in bulk API
-var numAircraft = 500;		// Number of aircraft being tracked
-var docSize = 60;		// Number of seconds of data in each document.
-var numParaBatch = 5;		// Number of matches to insert in parallel
-var startTime = 2016010100;	// YYYYMMDDHH - start time for sensor readings
-var endTime =   2016010103;	// YYYYMMDDHH - stop time for sensor readings
+// To Do
+// 1. Data aggregated in documents based upon tailnumber and time period [DONE 13Apr2016]
+// 2. multiple types of events
+// 3. process command line arguments
+// 4. sort out the node project issue
 
-var currentTime = startTime;
+// run like:
+//   node schemaTest.js --batchSize 100 --numAircraft 500 --docSize 60 --numParaBatch 5 --start "2016-01-01T00:00:00.000-0500" --totalSeconds 3
+
+var MongoClient = require('mongodb').MongoClient,
+    assert = require('assert'),
+    Step = require('step'),
+    _und = require('underscore'),
+    processArgs = require('minimist');
+
+var argvObj = processArgs(process.argv.slice(2));
+console.log("Command Args: %j", argvObj);
+
+function setCommandLineValue(field, argObj) {
+    var val = argObj[field];
+
+    if (val === undefined) throw new Error("Missing required command line argument: " + field);
+
+    return val;
+}
+
+// command line arguments
+var batchSize = setCommandLineValue("batchSize", argvObj);       // Size of batches used for mongodb inserts in bulk API
+var numAircraft = setCommandLineValue("numAircraft", argvObj);   // Number of aircraft being tracked
+var docSize = setCommandLineValue("docSize", argvObj);           // Number of seconds of data in each document.
+var numParaBatch = setCommandLineValue("numParaBatch", argvObj); // Number of matches to insert in parallel
+var start = setCommandLineValue("start", argvObj);               // Start time for sensor readings - JSON date format string
+var totalSeconds = setCommandLineValue("totalSeconds", argvObj); // Number of seconds for which to generate data
+
+
+var startTime = new Date(start);
+var currentTime = new Date(startTime);
+var currentIntTime = new Date(startTime);	// the time of the current interval used to batch the events into a single document per sensor
+var endTime = new Date(start);
+endTime.setSeconds(endTime.getSeconds() + totalSeconds);
 var threadsRunning = 0;
 
 // meta data
@@ -32,10 +63,7 @@ var tailNumbers = [];		// list of tail numbers used for the data set
 // 3. while we are waiting for the insert to happen, create the next batch
 // 4. Got to 3
 
-var MongoClient = require('mongodb').MongoClient,
-    assert = require('assert'),
-    Step = require('step'),
-    _und = require('underscore');
+
 
 // Connection URL
 var url = 'mongodb://localhost:27017/adsb';
@@ -59,20 +87,52 @@ function generateTailNumbers(numPlanes, aCodes) {
     return tNums;
 }
 
-function generateSensorReadings(cTime) {
+function formatTimeStamp(date) {
+
+    var yy = date.getFullYear();
+    var mm = date.getMonth()+1;
+    var dd = date.getDate();
+    var hh = date.getHours();
+    var ii = date.getMinutes();
+    var ss = date.getSeconds();
+
+    if ( dd < 10 ) dd = '0' + dd;
+    if ( mm < 10 ) mm = '0' + mm;
+    if ( hh < 10 ) hh = '0' + hh;
+    if ( ii < 10 ) ii = '0' + ii;
+    if ( ss < 10 ) ss = '0' + ss;
+
+    tStamp = "" + yy + mm + dd + hh + ii + ss;
+    
+//    console.log("Date: " + date + " Time Stamp: " + tStamp);
+
+    return tStamp;
+
+
+}
+
+
+function generateSensorReadings(cTime, intTime) {
 
     var readings = [];
     var reading = {
         "s" : 154,
         "b" : 150,
-        "t" : Date("2016-01-31T20:54:37.000+0000"),
+        "t" : new Date(cTime),
         "v" : 0
     };
-
+    
+    var timeStamp = formatTimeStamp(intTime);
+    
     for (t = 0; t < tailNumbers.length; t++) {
 
 	var r = _und.clone(reading);
-	r._id = cTime + ":" + tailNumbers[t];
+	r.mData = {
+	    _id : timeStamp + ":" + tailNumbers[t],
+	    icao : tailNumbers[t],
+	    callsign : tailNumbers[t],
+	    ts : new Date(intTime)
+	};
 	readings.push(r);
     }
 
@@ -103,17 +163,59 @@ function fillBatchQueue(bQueue) {
     var newBatches;
     
     if ((currentTime < endTime) && (bQueue.length < numParaBatch)) {
-	// generate the readings for the next time period
-	readings = generateSensorReadings(currentTime++);
+	// generate the readings for the current time period
+	readings = generateSensorReadings(currentTime, currentIntTime);
 	newBatches = generateBatches(readings, batchSize);
 
+	// increment the currentTime
+	currentTime.setSeconds(currentTime.getSeconds() + 1);
+
+	// if we have hit the next document interval boundary set currentIntTime to currentTime
+	if ((((currentTime.getTime() - currentIntTime.getTime()) / 1000) % docSize) == 0) currentIntTime.setTime(currentTime.getTime());
+
 	bQueue.push.apply(bQueue, newBatches);
-        console.log("filled batch queue.")
+        console.log("filled batch queue. currentTime: ", currentTime);
     }
+}
+
+
+function generateMDBOperation(reading) {
+
+    var numSec = (reading.t.getTime() - reading.mData.ts.getTime()) / 1000;
+    var mData = reading.mData;
+    var result;
+    
+    delete reading.mData;
+    if ((numSec % docSize) == 0) {
+	// start a new document grouping interval
+	result = {insertOne :
+		  {document : {
+		      "_id" : mData._id,
+		      "icao" : mData.icao,
+		      "callsign" : mData.callsign,
+		      "ts" : mData.ts,
+		      "events" : [reading]
+		  }}};
+    }
+    else {
+	result = {updateOne : {
+	    filter : {
+		"_id" : mData._id
+	    },
+	    update : {
+		$push : {"events" : reading}
+	    }
+	}};
+    }
+
+    console.log("Bulk write operation: %j", result);
+    return result;
 }
 
 // Kick off the insert
 // Refill the batch queue
+
+
 function processBatch(dataCol, bQueue, callback) {
 
     var batch = bQueue.pop();
@@ -123,13 +225,12 @@ function processBatch(dataCol, bQueue, callback) {
     if (batch) {
 	threadsRunning++;
         dataCol.bulkWrite(
-	    batch.map(function (reading) {
-		return {insertOne : {document : reading}}}),
+	    batch.map(generateMDBOperation),
 	    {ordered : false},
 	    function (err, r) {
 		threadsRunning--;
 		if (err) {
-                    console.log("Error - bulkWrite: " + err);
+                    console.log("Error - bulkWrite: %j", err);
 		    callback(err);
 		}
 		else {
