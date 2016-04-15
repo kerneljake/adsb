@@ -1,0 +1,208 @@
+
+// command line arguments
+var batchSize = 100;		// Size of batches used for mongodb inserts in bulk API
+var numAircraft = 500;		// Number of aircraft being tracked
+var docSize = 60;		// Number of seconds of data in each document.
+var numParaBatch = 5;		// Number of matches to insert in parallel
+var startTime = 2016010100;	// YYYYMMDDHH - start time for sensor readings
+var endTime =   2016010103;	// YYYYMMDDHH - stop time for sensor readings
+
+var currentTime = startTime;
+var threadsRunning = 0;
+
+// meta data
+var airlineCodes = []; 		// list of all ICAO/IATA airline codes
+var tailNumbers = [];		// list of tail numbers used for the data set
+
+
+// Document Attribute Key
+//  _id      - "YYYYMMDDHH:ICAO"
+//  icao     - 6 characters. First two characters are the airline code, the remaining 3-4 digits are the flight number
+//  ts       - start time for block of data for aircraft
+//  s        - speed
+//  b        - bearing
+//  v        - vertical rate
+//  a        - altitude
+//  p        - [longitude, latitude]
+//  t        - time
+//  callsign - call sign
+
+// 1. Create a batch to insert
+// 2. Insert the batch
+// 3. while we are waiting for the insert to happen, create the next batch
+// 4. Got to 3
+
+var MongoClient = require('mongodb').MongoClient,
+    assert = require('assert'),
+    Step = require('step'),
+    _und = require('underscore');
+
+// Connection URL
+var url = 'mongodb://localhost:27017/adsb';
+
+function randomIntInc (low, high) {
+    return Math.floor(Math.random() * (high - low + 1) + low);
+}
+
+function generateTailNumbers(numPlanes, aCodes) {
+    var tNums = [];
+    var AC;
+    var flightNum;
+    
+    
+    for (t = 0; t < numPlanes; t++) {
+	flightNum = randomIntInc(1000, 9999);
+	AC = aCodes[randomIntInc(0, aCodes.length - 1)];
+	tNums.push(AC + flightNum);
+    }
+
+    return tNums;
+}
+
+function generateSensorReadings(cTime) {
+
+    var readings = [];
+    var reading = {
+        "s" : 154,
+        "b" : 150,
+        "t" : Date("2016-01-31T20:54:37.000+0000"),
+        "v" : 0
+    };
+
+    for (t = 0; t < tailNumbers.length; t++) {
+
+	var r = _und.clone(reading);
+	r._id = cTime + ":" + tailNumbers[t];
+	readings.push(r);
+    }
+
+    return readings;
+}
+
+function generateBatches (readings, bSize) {
+
+    var batch;
+    var restBatches;
+    
+    if (readings.length > 0) {
+	batch = readings.splice(0, bSize);
+	restBatches = generateBatches(readings, bSize); 
+	restBatches.push(batch);
+    }
+    else {
+	restBatches = [];
+    }
+
+    return restBatches;
+
+}
+
+function fillBatchQueue(bQueue) {
+
+    var readings;
+    var newBatches;
+    
+    if ((currentTime < endTime) && (bQueue.length < numParaBatch)) {
+	// generate the readings for the next time period
+	readings = generateSensorReadings(currentTime++);
+	newBatches = generateBatches(readings, batchSize);
+
+	bQueue.push.apply(bQueue, newBatches);
+        console.log("filled batch queue.")
+    }
+}
+
+// Kick off the insert
+// Refill the batch queue
+function processBatch(dataCol, bQueue, callback) {
+
+    var batch = bQueue.pop();
+
+    //    batch.map(function (reading) {return {"insertOne" : {"document" : reading}}}).forEach(function(arg) {console.log("Inserting: %j", arg);});
+
+    if (batch) {
+	threadsRunning++;
+        dataCol.bulkWrite(
+	    batch.map(function (reading) {
+		return {insertOne : {document : reading}}}),
+	    {ordered : false},
+	    function (err, r) {
+		threadsRunning--;
+		if (err) {
+                    console.log("Error - bulkWrite: " + err);
+		    callback(err);
+		}
+		else {
+                    console.log("Inserted: " + r.nInserted);
+
+		    process.nextTick(function () {
+			processBatch(bQueue, callback);
+		    });
+		}
+	    }
+	);
+	fillBatchQueue(bQueue);
+    }
+    else {
+	console.log("Thread Done");
+	if (threadsRunning == 0) {
+	    console.log("Processing Done.");
+	    callback("done");
+	}
+    }
+}
+
+function performTests(dataCol, callback) {
+    
+    var bQueue = [];
+
+    fillBatchQueue(bQueue);
+    
+    for (b = 0; b < numParaBatch; b++) {
+	    processBatch(dataCol, bQueue, callback);
+    }
+}
+
+// Use connect method to connect to the Server
+MongoClient.connect(url, function(err, db) {
+    assert.equal(null, err);
+    console.log("Connected correctly to server");
+
+    var alCodeCol = db.collection('airlineCodes');
+    var dataCol = db.collection('data');
+    
+    Step (
+	function dropData() {
+	    dataCol.drop(this);
+	},
+	function loadAirlineCodes (err, result) {
+	    console.log("load airline codes");
+	    alCodeCol.distinct("IATA", this);
+	},
+	function setAirlineCodes (error, aCodes) {
+        if (error) {console.log(error);}
+        assert.equal(null, error);
+
+	    console.log("loaded airline codes");
+	 //   assert.ifError(err);
+
+	    airlineCodes = aCodes;
+
+        console.log("Airline codes: " + airlineCodes);
+	    tailNumbers = generateTailNumbers(numAircraft, airlineCodes);
+	    console.log("Tail Numbers: " + tailNumbers);
+	    
+	    performTests(dataCol, this);
+	},
+	function done (err, result) {
+	    if (err) {
+		console.log("Error: " + err);
+	    }
+	    else {
+		console.log ("Test done: " + result);
+	    }
+	    db.close();
+	}
+
+    );
+});
