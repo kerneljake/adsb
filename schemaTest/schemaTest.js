@@ -37,6 +37,7 @@ var config = {
     start: setCommandLineValue("start", argvObj),               // Start time for sensor readings - JSON date format string
     totalSeconds: setCommandLineValue("totalSeconds", argvObj), // Number of seconds for which to generate data
 
+    testCompleted: false,
     insertReportInterval: 10000,
     lastReportCount: 0,
 
@@ -126,16 +127,22 @@ function randomIntInc (low, high) {
     return Math.floor(Math.random() * (high - low + 1) + low);
 }
 
+function generateTailNumber(aCodes) {
+    return aCodes[randomIntInc(0, aCodes.length - 1)] + randomIntInc(1000, 9999);
+}
+
 function generateTailNumbers(numPlanes, aCodes) {
     var tNums = [];
-    var AC;
-    var flightNum;
-    
-    
+    var tNumHash = {};
+    var tailNum;
+
     for (t = 0; t < numPlanes; t++) {
-	flightNum = randomIntInc(1000, 9999);
-	AC = aCodes[randomIntInc(0, aCodes.length - 1)];
-	tNums.push(AC + flightNum); // this doesn't guarantee uniqueness. Not sure I care.
+	tailNum = generateTailNumber(aCodes);
+	while (tNumHash[tailNum] == 1) {
+	    tailNum = generateTailNumber(aCodes);
+	}
+	tNumHash[tailNum] = 1;
+	tNums.push(tailNum); // this doesn't guarantee uniqueness. Not sure I care.
     }
 
     return tNums;
@@ -385,7 +392,8 @@ function logTestEnd(logCol, callback) {
 		     {$set : {testEndTime: config.testEndTime,
 			      numInserted: config.numInserted,
 			      testTimeSec: config.testTimeSec,
-			      avgInsRate: config.avgInsRate}},
+			      avgInsRate: config.avgInsRate,
+			      testCompleted: true}},
 		     {},
 		     function (err, r) {
 			 if (err) {
