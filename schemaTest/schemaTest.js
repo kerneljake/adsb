@@ -36,6 +36,8 @@ var config = {
     numParaBatch: setCommandLineValue("numParaBatch", argvObj), // Number of matches to insert in parallel
     start: setCommandLineValue("start", argvObj),               // Start time for sensor readings - JSON date format string
     totalSeconds: setCommandLineValue("totalSeconds", argvObj), // Number of seconds for which to generate data
+    host: setCommandLineValue("host", argvObj),
+    port: setCommandLineValue("port", argvObj),
 
     testCompleted: false,
     insertReportInterval: 10000,
@@ -121,7 +123,7 @@ var tailNumbers = [];		// list of tail numbers used for the data set
 
 
 // Connection URL
-var url = 'mongodb://localhost:27017/adsb';
+var url = 'mongodb://' + config.host + ':' + config.port + '/adsb';
 
 function randomIntInc (low, high) {
     return Math.floor(Math.random() * (high - low + 1) + low);
