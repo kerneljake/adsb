@@ -4,6 +4,7 @@
   "description": "Workbench to test performance of various IoT schemas",
   "main": "schemaTest.js",
   "dependencies": {
+    "moment": "^2.13.0",
     "step": "0.0.6"
   },
   "devDependencies": {},

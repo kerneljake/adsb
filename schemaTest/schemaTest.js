@@ -288,7 +288,18 @@ function generateMDBOperation(reading) {
     var result;
     
     delete reading.mData;
-    if ((numSec % config.docSize) == 0) {
+    if (config.docSize == 1) {
+	// insert new document with events as a subdocument instead of an array
+	result = {insertOne :
+		  {document : {
+		      "_id" : mData._id,
+		      "icao" : mData.icao,
+		      "callsign" : mData.callsign,
+		      "ts" : mData.ts,
+		      "events" : reading
+		  }}};
+    }
+    else if ((numSec % config.docSize) == 0) {
 	// start a new document grouping interval
 	result = {insertOne :
 		  {document : {
@@ -385,6 +396,18 @@ function logTestStart(logCol, callback) {
     });
 }
 
+function dbColStats(dataCol, callback) {
+    dataCol.stats(function(err, stats) {
+	if (err) {
+	    console.log("Get Collection Stats Error: %j", err);
+	}
+	else {
+	    config.stats = stats;
+	    callback(err, stats);
+	}
+    });
+}
+
 function logTestEnd(logCol, callback) {
 
     config.testTimeSec = moment(config.testEndTime).diff(moment(config.testStartTime), 'seconds');
@@ -395,6 +418,7 @@ function logTestEnd(logCol, callback) {
 			      numInserted: config.numInserted,
 			      testTimeSec: config.testTimeSec,
 			      avgInsRate: config.avgInsRate,
+			      stats: config.stats,
 			      testCompleted: true}},
 		     {},
 		     function (err, r) {
@@ -451,6 +475,12 @@ MongoClient.connect(url, function(err, db) {
 		console.log("Error: " + err);
 	    }
 	    performTests(dataCol, this);
+	},
+	function getColStats(err, result) {
+	    if (err) {
+		console.log("Error: " + err);
+	    }
+	    dbColStats(dataCol, this);
 	},
 	function logTestResults(err, result) {
 	    if (err) {
