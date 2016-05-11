@@ -14,7 +14,8 @@ var MongoClient = require('mongodb').MongoClient,
     Step = require('step'),
     _und = require('underscore'),
     processArgs = require('minimist'),
-    moment = require('moment');
+    moment = require('moment'),
+    stream = require('stream');
 
 var argvObj = processArgs(process.argv.slice(2));
 //console.log("Command Args: %j", argvObj);
@@ -26,6 +27,104 @@ function setCommandLineValue(field, argObj) {
 
     return val;
 }
+
+var queryTest = {
+    indexes : [ {key: {ts : 1}, name: "ts_1"} ],
+    queries : [
+	{
+	    name: "Avg 10 min speed",
+	    query1 : [
+		// Stage 1
+		{
+		    $match: {
+			"ts" : {$gte : new Date("2016-01-01T05:10:00.000+0000"), $lt : new Date("2016-01-01T05:20:00.000+0000") }
+		    }
+		},
+
+		// Stage 2
+		{
+		    $group: { 
+			"_id" : "$icao", 
+			"avgSpeed" : {
+			    "$avg" : "$events.s"
+			}
+		    }
+		}
+	    ],
+	    queryMany: [
+		// Stage 1
+		{
+		    $match: {
+			"ts" : {$gte : new Date("2016-01-01T05:10:00.000+0000"), $lt : new Date("2016-01-01T05:20:00.000+0000") }
+		    }
+		},
+
+		// Stage 2
+		{
+		    $unwind: { 
+			"path" : "$events"
+		    }
+		},
+
+		// Stage 3
+		{
+		    $group: { 
+			"_id" : "$icao", 
+			"avgSpeed" : {
+			    "$avg" : "$events.s"
+			}
+		    }
+		}
+	    ]
+	},
+	{
+	    name: "Avg 10 min speed",
+	    query1 : [
+		// Stage 1
+		{
+		    $match: {
+			"ts" : {$gte : new Date("2016-01-01T05:10:00.000+0000"), $lt : new Date("2016-01-01T05:20:00.000+0000") }
+		    }
+		},
+
+		// Stage 2
+		{
+		    $group: { 
+			"_id" : "$icao", 
+			"avgSpeed" : {
+			    "$avg" : "$events.s"
+			}
+		    }
+		}
+	    ],
+	    queryMany: [
+		// Stage 1
+		{
+		    $match: {
+			"ts" : {$gte : new Date("2016-01-01T05:10:00.000+0000"), $lt : new Date("2016-01-01T05:20:00.000+0000") }
+		    }
+		},
+
+		// Stage 2
+		{
+		    $unwind: { 
+			"path" : "$events"
+		    }
+		},
+
+		// Stage 3
+		{
+		    $group: { 
+			"_id" : "$icao", 
+			"avgSpeed" : {
+			    "$avg" : "$events.s"
+			}
+		    }
+		}
+	    ]
+	}
+    ]
+};
 
 var config = {
     _id: new ObjectID(),
@@ -408,6 +507,20 @@ function dbColStats(dataCol, callback) {
     });
 }
 
+function buildIndexes(dataCol, callback) {
+    	
+    dataCol.createIndexes(queryTest.indexes,
+			  function(err, result) {
+			      if (err) {
+				  console.log("Index Creation Error: %j", err);
+				  callback(err, null);
+			      }
+			      else {
+				  callback(err, result);
+			      }
+			  });
+}
+
 function logTestEnd(logCol, callback) {
 
     config.testTimeSec = moment(config.testEndTime).diff(moment(config.testStartTime), 'seconds');
@@ -434,39 +547,79 @@ function logTestEnd(logCol, callback) {
 		     });
 }
 
+function executeQuery(dataCol, logTestCol, query, callback) {
 
+    var queryRes = {};
+	var aggPipeline;
+    queryRes.name = query.name;
+    aggPipeline = (config.docSize == 1) ? query.query1 : query.queryMany;
+	queryRes.query = JSON.stringify(aggPipeline)
+    queryRes.queryStart = new Date();
+    queryRes.count = 0;
 
+    var aggStream = dataCol.aggregate(aggPipeline, {cursor : {batchSize : 100}, allowDiskUse : true}).stream();
 
-// Use connect method to connect to the Server
-MongoClient.connect(url, function(err, db) {
-    assert.equal(null, err);
-    console.log("Connected correctly to server");
+    aggStream.on('data', function(doc) {
+	console.log("Aggregation Result: %j", doc);
+	queryRes.count++;
+    });
 
-    var alCodeCol = db.collection('airlineCodes');
-    var dataCol = db.collection('data');
-    var testLogCol = db.collection('tests');
-    
+    aggStream.on('error', function (doc) {
+	console.log("Query failed: %j", doc);
+	callback(doc, false);
+    });
+
+    aggStream.on('end', function() {
+	queryRes.queryEnd = new Date();
+	queryRes.success = true;
+	// save results to MongoDB
+	queryRes.testDuration = queryRes.queryEnd.valueOf() - queryRes.queryStart.valueOf(); // milliseconds
+
+	logTestCol.updateOne({_id : config._id},
+			 {$push : {queryResult : queryRes}},
+			 {},
+			 function (err, r) {
+			     if (err) {
+				 console.log("executeQuery log aggregation test end error: %j", err);
+			     }
+			     else {
+			     
+				 console.log("Agg Query Test: " + queryRes.name + " ended at: " + queryRes.queryEnd + " Results: " + queryRes.count);
+				 console.log("Total time (ms): " + queryRes.testDuration);
+			     }
+			     callback(err, r);
+			 });
+    });
+}
+
+function executeAggTestAux(currentQuery, dataCol, logTestCol, callback) {
+   if (currentQuery < queryTest.queries.length) {
+	executeQuery(dataCol, logTestCol, queryTest.queries[currentQuery], function (err, result) {
+	    if (err) {
+		console.log("Error executing aggregation query: %j", err);
+	    }
+
+	    var nextQuery = ++currentQuery;
+	    executeAggTestAux(nextQuery, dataCol, logTestCol, callback);
+	    
+	});
+   }
+    else {
+	callback(null, currentQuery);
+    }
+}
+
+function executeAggTest(dataCol, logTestCol, callback) {
+    var currentQuery = 0;
+
+    executeAggTestAux(0, dataCol, logTestCol, callback);
+}
+
+function executeLoadTest(dataCol, testLogCol, callback) {
     Step (
-	function dropData() {
-	    dataCol.drop(this);
-	},
-	function loadAirlineCodes (err, result) {
-//	    console.log("load airline codes");
-	    alCodeCol.distinct("IATA", this);
-	},
-	function setAirlineCodes (error, aCodes) {
-            if (error) {console.log(error);}
-            assert.equal(null, error);
-
-//	    console.log("loaded airline codes");
-	 //   assert.ifError(err);
-
-	    airlineCodes = aCodes;
-
-//            console.log("Airline codes: " + airlineCodes);
-	    tailNumbers = generateTailNumbers(config.numAircraft, airlineCodes);
-//	    console.log("Tail Numbers: " + tailNumbers);
-
+	function recordTestStart (err, result) {
+	    if (err)  {console.log(err);}
+	    
 	    config.testStartTime = new Date();
 	    logTestStart(testLogCol, this);
 	},
@@ -488,6 +641,61 @@ MongoClient.connect(url, function(err, db) {
 	    }
 	    config.testEndTime= new Date();
 	    logTestEnd(testLogCol, this);
+	},
+	function done (err, result) {
+	    if (err) console.log(err);
+
+	    callback(err, true);
+	}
+    );
+}
+
+// Use connect method to connect to the Server
+MongoClient.connect(url, function(err, db) {
+    assert.equal(null, err);
+    console.log("Connected correctly to server");
+
+    var alCodeCol = db.collection('airlineCodes');
+    var dataCol = db.collection('data');
+    var testLogCol = db.collection('tests');
+    
+    Step (
+	function dropData() {
+	    dataCol.drop(this);
+	},
+	function loadAirlineCodes (err, result) {
+	    if (err)  {console.log(error);}
+//	    console.log("load airline codes");
+	    alCodeCol.distinct("IATA", this);
+	},
+	function setAirlineCodes (error, aCodes) {
+            if (error) {console.log(error);}
+            assert.equal(null, error);
+
+//	    console.log("loaded airline codes");
+	 //   assert.ifError(err);
+
+	    airlineCodes = aCodes;
+
+//            console.log("Airline codes: " + airlineCodes);
+	    tailNumbers = generateTailNumbers(config.numAircraft, airlineCodes);
+//	    console.log("Tail Numbers: " + tailNumbers);
+
+	    buildIndexes(dataCol, this);
+	},
+	function performLoadTest (err, result) {
+	    if (err) {
+		console.log("performLoadTest Error: %j", err);
+	    }
+
+	    executeLoadTest(dataCol, testLogCol, this);
+	},
+	function performAggTest(err, result) {
+	    if (err) {
+		console.log("performAggTest Error: %j", err);
+	    }
+
+	    executeAggTest(dataCol, testLogCol, this);
 	},
 	function done (err, result) {
 	    if (err) {

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-TIME=3600   #24 hours
+TIME=60   #24 hours
 THREADS=12
 
 HOST=localhost
