@@ -32,7 +32,7 @@ var queryTest = {
     indexes : [ {key: {ts : 1}, name: "ts_1"} ],
     queries : [
 	{
-	    name: "Avg 10 min speed",
+	    name: "Avg 10 min speed - cold cache",
 	    query1 : [
 		// Stage 1
 		{
@@ -78,7 +78,7 @@ var queryTest = {
 	    ]
 	},
 	{
-	    name: "Avg 10 min speed",
+	    name: "Avg 10 min speed - warm cache",
 	    query1 : [
 		// Stage 1
 		{
@@ -119,6 +119,66 @@ var queryTest = {
 			"avgSpeed" : {
 			    "$avg" : "$events.s"
 			}
+		    }
+		}
+	    ]
+	},
+	{
+	    name: "Average speed per hour",
+	    query1 : [
+		// Stage 1
+		{
+		    $project: {
+			"hour" : {$hour : "$events.t"},
+			"s" : "$events.s"
+		    }
+		},
+
+		// Stage 2
+		{
+		    $group: {
+			_id : "$hour",
+			avgSpeed : {$avg : "$s"}
+		    }
+		},
+
+		// Stage 3
+		{
+		    $project: {
+			"_id" : 0,
+			"hour" : "$_id",
+			"avgSpeed" : "$avgSpeed"
+		    }
+		}
+	    ],
+	    queryMany: [
+		// Stage 1
+		{
+		    $unwind: "$events"
+		},
+
+		// Stage 2
+		{
+		    $project: {
+			"hour" : {$hour : "$events.t"},
+			"s" : "$events.s"
+		    }
+		},
+
+		// Stage 3
+		{
+		    $group: {
+			_id : "$hour",
+			avgSpeed : {$avg : "$s"}
+		    }
+		},
+
+		// Stage 4
+		{
+		    $project: {
+			"_id" : 0,
+			"hour" : "$_id",
+			"avgSpeed" : "$avgSpeed"
 		    }
 		}
 	    ]
