@@ -491,9 +491,9 @@ function generateMDBOperation(reading) {
 function processBatch(dataCol, bQueue, callback) {
 
     var batch = bQueue.shift();
-
     //    batch.map(function (reading) {return {"insertOne" : {"document" : reading}}}).forEach(function(arg) {console.log("Inserting: %j", arg);});
 
+    
     if (batch) {
 	config.threadsRunning++;
         dataCol.bulkWrite(
@@ -514,9 +514,10 @@ function processBatch(dataCol, bQueue, callback) {
 			console.log(new Date() + "> Insert count: " + config.numInserted);
 		    }
 
-		    process.nextTick(function () {
-			processBatch(dataCol, bQueue, callback);
-		    });
+		    processBatch(dataCol, bQueue, callback);
+//		    process.nextTick(function () {
+//			processBatch(dataCol, bQueue, callback);
+//		    });
 		}
 	    }
 	);
