@@ -75,6 +75,35 @@ var queryTest = {
 			}
 		    }
 		}
+	    ],
+	    queryPreAgg:   [
+		// Stage 1
+		{
+		    $match: { 
+			"ts" : {
+			    "$gte" : new Date("2016-01-01T05:10:00.000+0000"), 
+			    "$lt" : new Date("2016-01-01T05:20:00.000+0000")
+			}
+		    }
+		},
+
+		// Stage 2
+		{
+		    $group: { 
+			"_id" : "$icao", 
+			"speedTotal" : {"$sum" : "$eSTotal"}, 
+			"countTotal" : {"$sum" : "$eCount"}
+		    }
+		},
+
+		// Stage 3
+		{
+		    $project: {
+      			_id : 0,
+      			"icao" : "$_id",
+      			"avgSpeed": {"$divide" : ["$speedTotal", "$countTotal"]}
+		    }
+		}
 	    ]
 	},
 	{
@@ -119,6 +148,35 @@ var queryTest = {
 			"avgSpeed" : {
 			    "$avg" : "$events.s"
 			}
+		    }
+		}
+	    ],
+	    queryPreAgg:   [
+		// Stage 1
+		{
+		    $match: { 
+			"ts" : {
+			    "$gte" : new Date("2016-01-01T05:10:00.000+0000"), 
+			    "$lt" : new Date("2016-01-01T05:20:00.000+0000")
+			}
+		    }
+		},
+
+		// Stage 2
+		{
+		    $group: { 
+			"_id" : "$icao", 
+			"speedTotal" : {"$sum" : "$eSTotal"}, 
+			"countTotal" : {"$sum" : "$eCount"}
+		    }
+		},
+
+		// Stage 3
+		{
+		    $project: {
+      			_id : 0,
+      			"icao" : "$_id",
+      			"avgSpeed": {"$divide" : ["$speedTotal", "$countTotal"]}
 		    }
 		}
 	    ]
@@ -181,6 +239,29 @@ var queryTest = {
 			"avgSpeed" : "$avgSpeed"
 		    }
 		}
+	    ],
+	    queryPreAgg:   [
+		// Stage 1
+		{
+		    $group: {
+			"_id" : "$icao",
+			"speedTotal" : {
+			    "$sum" : "$eSTotal"
+			}, 
+			"countTotal" : {
+			    "$sum" : "$eCount"
+			}
+		    }
+		},
+
+		// Stage 2
+		{
+		    $project: {
+      			_id : 0,
+      			"icao" : "$_id",
+      			"avgSpeed": {"$divide" : ["$speedTotal", "$countTotal"]}
+		    }
+		}      
 	    ]
 	}
     ]
@@ -197,6 +278,7 @@ var config = {
     totalSeconds: setCommandLineValue("totalSeconds", argvObj), // Number of seconds for which to generate data
     host: setCommandLineValue("host", argvObj),
     port: setCommandLineValue("port", argvObj),
+    preAggS: setCommandLineValue("preAggS", argvObj),           // Sum the speed (s) as a top level field to improve query performance
 
     testCompleted: false,
     insertReportInterval: 10000,
@@ -234,6 +316,8 @@ var config = {
     }
 
 };
+
+process.env.UV_THREADPOOL_SIZE = config.numParaBatch;
 
 config.startTime = new Date(config.start);
 config.currentTime = new Date(config.startTime);
@@ -466,8 +550,12 @@ function generateMDBOperation(reading) {
 		      "icao" : mData.icao,
 		      "callsign" : mData.callsign,
 		      "ts" : mData.ts,
-		      "events" : [reading]
 		  }}};
+
+	if (config.preAggS) {
+	    result.insertOne.document.eCount = 1;
+	    result.insertOne.document.eSTotal = reading.s;
+	}
     }
     else {
 	result = {updateOne : {
@@ -478,6 +566,10 @@ function generateMDBOperation(reading) {
 		$push : {"events" : reading}
 	    }
 	}};
+
+	if (config.preAggS) {
+	    result.updateOne.update["$inc"] = {"eCount" : 1, "eSTotal" : reading.s};
+	}
     }
 
 //    console.log("Bulk write operation: %j", result);
@@ -611,13 +703,23 @@ function logTestEnd(logCol, callback) {
 function executeQuery(dataCol, logTestCol, query, callback) {
 
     var queryRes = {};
-	var aggPipeline;
+    var aggPipeline;
+
     queryRes.name = query.name;
-    aggPipeline = (config.docSize == 1) ? query.query1 : query.queryMany;
-	queryRes.query = JSON.stringify(aggPipeline)
     queryRes.queryStart = new Date();
     queryRes.count = 0;
 
+    if (config.docSize == 1) {
+	aggPipeline = query.query1;
+    }
+    else if (config.preAggS) {
+	aggPipeline = query.queryPreAgg;
+    }
+    else {
+	aggPipeline = query.queryMany;
+    }
+    queryRes.query = JSON.stringify(aggPipeline);
+    
     var aggStream = dataCol.aggregate(aggPipeline, {cursor : {batchSize : 100}, allowDiskUse : true}).stream();
 
     aggStream.on('data', function(doc) {
