@@ -6,7 +6,7 @@
 // 4. sort out the node project issue
 
 // run like:
-//   node schemaTest.js --batchSize 100 --numAircraft 500 --docSize 60 --numParaBatch 5 --start "2016-01-01T00:00:00.000-0500" --totalSeconds 3
+//   node schemaTest.js --batchSize 100 --numAircraft 500 --docSize 60 --numParaBatch 5 --start "2016-01-01T00:00:00.000-0500" --totalSeconds 3 --host localhost --port 27017 --lambda 60 --lTrackMem 
 
 var MongoClient = require('mongodb').MongoClient,
     ObjectID = require('mongodb').ObjectID,
@@ -15,9 +15,10 @@ var MongoClient = require('mongodb').MongoClient,
     _und = require('underscore'),
     processArgs = require('minimist'),
     moment = require('moment'),
-    stream = require('stream');
+    stream = require('stream'),
+    lambda = require('./lambdaInsert.js');
 
-var argvObj = processArgs(process.argv.slice(2));
+var argvObj = processArgs(process.argv.slice(2), {boolean : ["lTrackMem"]});
 //console.log("Command Args: %j", argvObj);
 
 function setCommandLineValue(field, argObj) {
@@ -27,6 +28,69 @@ function setCommandLineValue(field, argObj) {
 
     return val;
 }
+
+var config = {
+    _id: new ObjectID(),
+    argv: argvObj,		                                // command line args
+    batchSize: setCommandLineValue("batchSize", argvObj),       // Size of batches used for mongodb inserts in bulk API
+    numAircraft: setCommandLineValue("numAircraft", argvObj),   // Number of aircraft being tracked
+    docSize: setCommandLineValue("docSize", argvObj),           // Number of seconds of data in each document.
+    numParaBatch: setCommandLineValue("numParaBatch", argvObj), // Number of matches to insert in parallel
+    start: setCommandLineValue("start", argvObj),               // Start time for sensor readings - JSON date format string
+    totalSeconds: setCommandLineValue("totalSeconds", argvObj), // Number of seconds for which to generate data
+    host: setCommandLineValue("host", argvObj),
+    port: setCommandLineValue("port", argvObj),
+    preAggS: setCommandLineValue("preAggS", argvObj),           // Sum the speed (s) as a top level field to improve query performance
+    lambda: setCommandLineValue("lambda", argvObj),
+
+    testCompleted: false,
+    insertReportInterval: 100,
+    lastReportCount: 0,
+
+    threadsRunning: 0,
+    numInserted: 0,
+    testTimeSec: 0,
+    avgInsRate: 0,
+    SBVThreshold:  31,
+    readingTypes: [
+	{
+	    //	"type" : 'sbv',
+            "s" : 154,
+            "b" : 150,
+            "t" : null,
+            "v" : 0
+	},
+	{
+	    //	"type" : 'all',
+            "a" : 9350, 
+            "b" : 150, 
+            "p" : [-98.62762, 30.03657], 
+            "s" : 152, 
+            "t" : null,
+            "v" : 192
+	}
+    ],
+    fieldRanges: {
+	"a" : [0, 40000],
+	"b" : [0, 359],
+	"p" : [-180, 180], 
+	"s" : [0, 660],
+	"v" : [0, 300] 
+    },
+    lambdaIndexes : [ {key: {ts : 1, icao : 1}, name: "icao_ts_1"} ]
+
+};
+
+process.env.UV_THREADPOOL_SIZE = config.numParaBatch + 4;
+
+config.startTime = new Date(config.start);
+config.currentTime = new Date(config.startTime);
+config.currentIntTime = new Date(config.startTime);	// the time of the current interval used to batch the events into a single document per sensor
+config.endTime = new Date(config.start);
+config.endTime.setSeconds(config.endTime.getSeconds() + config.totalSeconds);
+
+config.lambdaQLen = Math.min(config.batchSize, config.numAircraft);
+
 
 var queryTest = {
     indexes : [ {key: {ts : 1}, name: "ts_1"} ],
@@ -104,6 +168,43 @@ var queryTest = {
       			"avgSpeed": {"$divide" : ["$speedTotal", "$countTotal"]}
 		    }
 		}
+	    ],
+	    lambda: [
+		// Stage 1
+		{
+		    $match: {
+      			"ts" : {$in : [new Date("2016-01-01T05:10:00.000+0000"), 
+      				       new Date("2016-01-01T05:20:00.000+0000")]
+      			       }
+		    }
+		},
+
+		// Stage 2
+		{
+		    $sort: {
+			ts : 1
+		    }
+		},
+
+		// Stage 3
+		{
+		    $group: {
+			"_id" : "$icao",
+			firstSpeed: {"$first" : "$grandTotalSpeed"},
+			lastSpeed : {"$last": "$grandTotalSpeed"},
+			firstCount :  {"$first" : "$grandEventCount"},
+			lastCount: {"$last" : "$grandEventCount"}
+		    }
+		},
+
+		// Stage 4
+		{
+		    $project: {
+			"_id" : 0,
+			"icao" : "$_id",
+			"avgSpeed" : {"$divide" : [{"$subtract" : ["$lastSpeed", "$firstSpeed"]}, {"$subtract" : ["$lastCount", "$firstCount"]}]}
+		    }
+		}
 	    ]
 	},
 	{
@@ -177,6 +278,43 @@ var queryTest = {
       			_id : 0,
       			"icao" : "$_id",
       			"avgSpeed": {"$divide" : ["$speedTotal", "$countTotal"]}
+		    }
+		}
+	    ],
+	    lambda: [
+		// Stage 1
+		{
+		    $match: {
+      			"ts" : {$in : [new Date("2016-01-01T05:10:00.000+0000"), 
+      				       new Date("2016-01-01T05:20:00.000+0000")]
+      			       }
+		    }
+		},
+
+		// Stage 2
+		{
+		    $sort: {
+			ts : 1
+		    }
+		},
+
+		// Stage 3
+		{
+		    $group: {
+			"_id" : "$icao",
+			firstSpeed: {"$first" : "$grandTotalSpeed"},
+			lastSpeed : {"$last": "$grandTotalSpeed"},
+			firstCount :  {"$first" : "$grandEventCount"},
+			lastCount: {"$last" : "$grandEventCount"}
+		    }
+		},
+
+		// Stage 4
+		{
+		    $project: {
+			"_id" : 0,
+			"icao" : "$_id",
+			"avgSpeed" : {"$divide" : [{"$subtract" : ["$lastSpeed", "$firstSpeed"]}, {"$subtract" : ["$lastCount", "$firstCount"]}]}
 		    }
 		}
 	    ]
@@ -262,68 +400,30 @@ var queryTest = {
       			"avgSpeed": {"$divide" : ["$speedTotal", "$countTotal"]}
 		    }
 		}      
+	    ],
+	    lambda : [
+		// Stage 1
+		{
+		    $sort: { ts : -1}
+		},
+
+		// Stage 2
+		{
+		    $limit: config.numAircraft
+		},
+
+		// Stage 3
+		{
+		    $project: {
+			"_id" : 0,
+			"icao" : 1,
+			"avgSpeed" : {"$divide" : ["$grandTotalSpeed", "$grandEventCount"]}
+		    }
+		}
 	    ]
 	}
     ]
 };
-
-var config = {
-    _id: new ObjectID(),
-    argv: argvObj,		                                // command line args
-    batchSize: setCommandLineValue("batchSize", argvObj),       // Size of batches used for mongodb inserts in bulk API
-    numAircraft: setCommandLineValue("numAircraft", argvObj),   // Number of aircraft being tracked
-    docSize: setCommandLineValue("docSize", argvObj),           // Number of seconds of data in each document.
-    numParaBatch: setCommandLineValue("numParaBatch", argvObj), // Number of matches to insert in parallel
-    start: setCommandLineValue("start", argvObj),               // Start time for sensor readings - JSON date format string
-    totalSeconds: setCommandLineValue("totalSeconds", argvObj), // Number of seconds for which to generate data
-    host: setCommandLineValue("host", argvObj),
-    port: setCommandLineValue("port", argvObj),
-    preAggS: setCommandLineValue("preAggS", argvObj),           // Sum the speed (s) as a top level field to improve query performance
-
-    testCompleted: false,
-    insertReportInterval: 10000,
-    lastReportCount: 0,
-
-    threadsRunning: 0,
-    numInserted: 0,
-    testTimeSec: 0,
-    avgInsRate: 0,
-    SBVThreshold:  31,
-    readingTypes: [
-	{
-	    //	"type" : 'sbv',
-            "s" : 154,
-            "b" : 150,
-            "t" : null,
-            "v" : 0
-	},
-	{
-	    //	"type" : 'all',
-            "a" : 9350, 
-            "b" : 150, 
-            "p" : [-98.62762, 30.03657], 
-            "s" : 152, 
-            "t" : null,
-            "v" : 192
-	}
-    ],
-    fieldRanges: {
-	"a" : [0, 40000],
-	"b" : [0, 359],
-	"p" : [-180, 180], 
-	"s" : [0, 660],
-	"v" : [0, 300] 
-    }
-
-};
-
-process.env.UV_THREADPOOL_SIZE = config.numParaBatch;
-
-config.startTime = new Date(config.start);
-config.currentTime = new Date(config.startTime);
-config.currentIntTime = new Date(config.startTime);	// the time of the current interval used to batch the events into a single document per sensor
-config.endTime = new Date(config.start);
-config.endTime.setSeconds(config.endTime.getSeconds() + config.totalSeconds);
 
 // command line arguments
 // var batchSize = setCommandLineValue("batchSize", argvObj);       // Size of batches used for mongodb inserts in bulk API
@@ -467,17 +567,19 @@ function generateSensorReadings(cTime, intTime) {
 
     var readings = [];
     var timeStamp = formatTimeStamp(intTime);
+
     
     for (t = 0; t < tailNumbers.length; t++) {
 
 	var r = generateReading(cTime);
-	r.mData = {
+	var mData = {
 	    _id : timeStamp + ":" + tailNumbers[t],
 	    icao : tailNumbers[t],
 	    callsign : tailNumbers[t],
 	    ts : new Date(intTime)
 	};
-	readings.push(r);
+	
+	readings.push({event: r, mData : mData});
     }
 
     return readings;
@@ -501,6 +603,17 @@ function generateBatches (readings, bSize) {
 
 }
 
+function isIntervalBoundary(time) {
+    return (((time.getTime() - config.currentIntTime.getTime()) / 1000) % config.docSize) == 0;
+}
+
+// lambda boundary is at the start and every lambda events afterwards
+function isLambdaBoundary(time) {
+	var gt = time.getTime();
+    var result = ((time.getTime() / 1000) % config.lambda == 0) || (time.getTime() === config.startTime.getTime());
+    return result;
+}
+
 function fillBatchQueue(bQueue) {
 
     var readings;
@@ -515,9 +628,10 @@ function fillBatchQueue(bQueue) {
 	config.currentTime.setSeconds(config.currentTime.getSeconds() + 1);
 
 	// if we have hit the next document interval boundary set currentIntTime to currentTime
-	if ((((config.currentTime.getTime() - config.currentIntTime.getTime()) / 1000) % config.docSize) == 0)
+	if (isIntervalBoundary(config.currentTime)) {
 	    config.currentIntTime.setTime(config.currentTime.getTime());
-
+	}
+	
 	bQueue.push.apply(bQueue, newBatches);
 //        console.log("filled batch queue. currentTime: ", config.currentTime, "length: ", bQueue.length);
     }
@@ -526,11 +640,11 @@ function fillBatchQueue(bQueue) {
 
 function generateMDBOperation(reading) {
 
-    var numSec = (reading.t.getTime() - reading.mData.ts.getTime()) / 1000;
+    var numSec = (reading.event.t.getTime() - reading.mData.ts.getTime()) / 1000;
     var mData = reading.mData;
     var result;
     
-    delete reading.mData;
+    //delete reading.mData;
     if (config.docSize == 1) {
 	// insert new document with events as a subdocument instead of an array
 	result = {insertOne :
@@ -539,7 +653,7 @@ function generateMDBOperation(reading) {
 		      "icao" : mData.icao,
 		      "callsign" : mData.callsign,
 		      "ts" : mData.ts,
-		      "events" : reading
+		      "events" : reading.event
 		  }}};
     }
     else if ((numSec % config.docSize) == 0) {
@@ -550,11 +664,12 @@ function generateMDBOperation(reading) {
 		      "icao" : mData.icao,
 		      "callsign" : mData.callsign,
 		      "ts" : mData.ts,
+			  "events" : [reading.event]
 		  }}};
 
 	if (config.preAggS) {
 	    result.insertOne.document.eCount = 1;
-	    result.insertOne.document.eSTotal = reading.s;
+	    result.insertOne.document.eSTotal = reading.event.s;
 	}
     }
     else {
@@ -563,12 +678,12 @@ function generateMDBOperation(reading) {
 		"_id" : mData._id
 	    },
 	    update : {
-		$push : {"events" : reading}
+		$push : {"events" : reading.event}
 	    }
 	}};
 
 	if (config.preAggS) {
-	    result.updateOne.update["$inc"] = {"eCount" : 1, "eSTotal" : reading.s};
+	    result.updateOne.update["$inc"] = {"eCount" : 1, "eSTotal" : reading.event.s};
 	}
     }
 
@@ -576,62 +691,80 @@ function generateMDBOperation(reading) {
     return result;
 }
 
+
 // Kick off the insert
 // Refill the batch queue
 
 
-function processBatch(dataCol, bQueue, callback) {
+function processBatch(dataCol, lambdaCol, bQueue, lQueue, lTracker, callback) {
 
-    var batch = bQueue.shift();
-    //    batch.map(function (reading) {return {"insertOne" : {"document" : reading}}}).forEach(function(arg) {console.log("Inserting: %j", arg);});
+	var firstBatch = bQueue.shift();
+	//    batch.map(function (reading) {return {"insertOne" : {"document" : reading}}}).forEach(function(arg) {console.log("Inserting: %j", arg);});
 
-    
-    if (batch) {
-	config.threadsRunning++;
-        dataCol.bulkWrite(
-	    batch.map(generateMDBOperation),
-	    {ordered : false},
-	    function (err, r) {
-		config.threadsRunning--;
-		if (err) {
-                    console.log("Error - bulkWrite: %j", err);
-		    callback(err);
-		}
-		else {
-//                    console.log("Inserted: " + r.nInserted + " Updated: " + r.nModified);
-		    config.numInserted = config.numInserted + config.batchSize;
+        var f = function  (batch) {
 
-		    if (config.numInserted >= (config.lastReportCount + config.insertReportInterval)) {
-			config.lastReportCount = config.numInserted;
-			console.log(new Date() + "> Insert count: " + config.numInserted);
+	    if (batch) {
+		config.threadsRunning++;
+		dataCol.bulkWrite(
+		    batch.map(generateMDBOperation),
+		    {ordered : false},
+		    function (err, r) {
+			config.threadsRunning--;
+			if (err) {
+			    console.log("Error - bulkWrite: %j", err);
+			    callback(err);
+			}
+			else {
+			    //                    console.log("Inserted: " + r.nInserted + " Updated: " + r.nModified);
+			    config.numInserted = config.numInserted + config.batchSize;
+			    
+			    if (config.numInserted >= (config.lastReportCount + config.insertReportInterval)) {
+				config.lastReportCount = config.numInserted;
+				console.log(new Date() + "> Insert count: " + config.numInserted);
+			    }
+
+			    if (config.lambda > 1) {
+				//insert lambda docs
+				batch.map(function (reading) {
+				    lambda.incrementForEvent(lTracker, reading.mData.icao, reading.event);
+				    if (isLambdaBoundary(reading.event.t)) {
+					var mData = {
+					    icao : reading.mData.icao,
+					    ts: reading.event.t
+					};
+				
+					lambda.insertLambdaDoc(lambdaCol, dataCol, mData, config.lambda, lQueue, config.batchSize, lTracker,
+							       function (err, result) {if (err) console.log("Could not insert lambda doc for %j. Error: %j", reading.mData, err);});
+				    }
+				});
+			    }
+			    
+			    processBatch(dataCol, lambdaCol, bQueue, lQueue, lTracker, callback);
+			}
 		    }
-
-		    processBatch(dataCol, bQueue, callback);
-//		    process.nextTick(function () {
-//			processBatch(dataCol, bQueue, callback);
-//		    });
-		}
+		);
+		fillBatchQueue(bQueue);
 	    }
-	);
-	fillBatchQueue(bQueue);
-    }
-    else {
-//	console.log("Thread Done");
-	if (config.threadsRunning == 0) {
-	    console.log("Processing Done.");
-	    callback(null, "Okay");
-	}
-    }
+	    else {
+		//	console.log("Thread Done");
+		if (config.threadsRunning == 0) {
+		    console.log("Processing Done.");
+		    lambda.writeQueue(lambdaCol, lQueue, callback);
+		}
+	    };
+	} (firstBatch);
 }
 
-function performTests(dataCol, callback) {
+function performTests(dataCol, lambdaCol, callback) {
     
     var bQueue = [];
+    var lambdaQueue = [];
+    var lTracker = (config.lambda > 1) ? {} : null;
 
     fillBatchQueue(bQueue);
     
     for (b = 0; b < config.numParaBatch; b++) {
-	    processBatch(dataCol, bQueue, callback);
+	processBatch(dataCol, lambdaCol, bQueue, lambdaQueue, lTracker, callback);
     }
 }
 
@@ -660,18 +793,23 @@ function dbColStats(dataCol, callback) {
     });
 }
 
-function buildIndexes(dataCol, callback) {
-    	
-    dataCol.createIndexes(queryTest.indexes,
-			  function(err, result) {
-			      if (err) {
-				  console.log("Index Creation Error: %j", err);
-				  callback(err, null);
-			      }
-			      else {
-				  callback(err, result);
-			      }
-			  });
+function buildIndexes(dataCol, lCol, callback) {
+
+    Step (
+	function createIndexes() {
+	    dataCol.createIndexes(queryTest.indexes, this.parallel());
+	    lCol.createIndexes(config.lambdaIndexes, this.parallel());
+	},
+	function done (err, dResult, lResult) {
+	    if (err) {
+		console.log("Index Creation Error: %j", err);
+		callback(err);
+	    }
+	    else {
+		callback(null);
+	    }
+	}
+    )
 }
 
 function logTestEnd(logCol, callback) {
@@ -700,27 +838,35 @@ function logTestEnd(logCol, callback) {
 		     });
 }
 
-function executeQuery(dataCol, logTestCol, query, callback) {
+function executeQuery(dataCol, lCol, logTestCol, query, callback) {
 
     var queryRes = {};
     var aggPipeline;
+    var collection;
 
     queryRes.name = query.name;
     queryRes.queryStart = new Date();
     queryRes.count = 0;
 
-    if (config.docSize == 1) {
+    if (config.lambda > 1) {
+	aggPipeline = query.lambda;
+	collection = lCol;
+    }
+    else if (config.docSize == 1) {
 	aggPipeline = query.query1;
+	collection = dataCol;
     }
     else if (config.preAggS) {
 	aggPipeline = query.queryPreAgg;
+	collection = dataCol;
     }
     else {
 	aggPipeline = query.queryMany;
+	collection = dataCol;
     }
     queryRes.query = JSON.stringify(aggPipeline);
     
-    var aggStream = dataCol.aggregate(aggPipeline, {cursor : {batchSize : 100}, allowDiskUse : true}).stream();
+    var aggStream = collection.aggregate(aggPipeline, {cursor : {batchSize : 100}, allowDiskUse : true}).stream();
 
     aggStream.on('data', function(doc) {
 	console.log("Aggregation Result: %j", doc);
@@ -755,15 +901,15 @@ function executeQuery(dataCol, logTestCol, query, callback) {
     });
 }
 
-function executeAggTestAux(currentQuery, dataCol, logTestCol, callback) {
+function executeAggTestAux(currentQuery, dataCol, lambdaCol, logTestCol, callback) {
    if (currentQuery < queryTest.queries.length) {
-	executeQuery(dataCol, logTestCol, queryTest.queries[currentQuery], function (err, result) {
-	    if (err) {
-		console.log("Error executing aggregation query: %j", err);
-	    }
+       executeQuery(dataCol, lambdaCol, logTestCol, queryTest.queries[currentQuery], function (err, result) {
+	   if (err) {
+	       console.log("Error executing aggregation query: %j", err);
+	   }
 
-	    var nextQuery = ++currentQuery;
-	    executeAggTestAux(nextQuery, dataCol, logTestCol, callback);
+	   var nextQuery = ++currentQuery;
+	   executeAggTestAux(nextQuery, dataCol, lambdaCol, logTestCol, callback);
 	    
 	});
    }
@@ -772,13 +918,13 @@ function executeAggTestAux(currentQuery, dataCol, logTestCol, callback) {
     }
 }
 
-function executeAggTest(dataCol, logTestCol, callback) {
+function executeAggTest(dataCol, lambdaCol, logTestCol, callback) {
     var currentQuery = 0;
 
-    executeAggTestAux(0, dataCol, logTestCol, callback);
+    executeAggTestAux(0, dataCol, lambdaCol, logTestCol, callback);
 }
 
-function executeLoadTest(dataCol, testLogCol, callback) {
+function executeLoadTest(dataCol, testLogCol, lambdaCol, callback) {
     Step (
 	function recordTestStart (err, result) {
 	    if (err)  {console.log(err);}
@@ -790,7 +936,7 @@ function executeLoadTest(dataCol, testLogCol, callback) {
 	    if (err) {
 		console.log("Error: " + err);
 	    }
-	    performTests(dataCol, this);
+	    performTests(dataCol, lambdaCol, this);
 	},
 	function getColStats(err, result) {
 	    if (err) {
@@ -821,13 +967,15 @@ MongoClient.connect(url, function(err, db) {
     var alCodeCol = db.collection('airlineCodes');
     var dataCol = db.collection('data');
     var testLogCol = db.collection('tests');
+    var lambdaCol = db.collection('lambda');
     
     Step (
 	function dropData() {
-	    dataCol.drop(this);
+	    dataCol.drop(this.parallel());
+	    lambdaCol.drop(this.parallel());
 	},
-	function loadAirlineCodes (err, result) {
-	    if (err)  {console.log(error);}
+	function loadAirlineCodes (err, result1, result2) {
+	    if (err)  {console.log("Drop error: %j", err);}
 //	    console.log("load airline codes");
 	    alCodeCol.distinct("IATA", this);
 	},
@@ -844,21 +992,21 @@ MongoClient.connect(url, function(err, db) {
 	    tailNumbers = generateTailNumbers(config.numAircraft, airlineCodes);
 //	    console.log("Tail Numbers: " + tailNumbers);
 
-	    buildIndexes(dataCol, this);
+	    buildIndexes(dataCol, lambdaCol, this);
 	},
 	function performLoadTest (err, result) {
 	    if (err) {
 		console.log("performLoadTest Error: %j", err);
 	    }
 
-	    executeLoadTest(dataCol, testLogCol, this);
+	    executeLoadTest(dataCol, testLogCol, lambdaCol, this);
 	},
 	function performAggTest(err, result) {
 	    if (err) {
 		console.log("performAggTest Error: %j", err);
 	    }
 
-	    executeAggTest(dataCol, testLogCol, this);
+	    executeAggTest(dataCol, lambdaCol, testLogCol, this);
 	},
 	function done (err, result) {
 	    if (err) {
