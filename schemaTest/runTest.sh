@@ -1,6 +1,6 @@
 #!/bin/bash
 
-TESTNAME=debug2Jun04
+TESTNAME=debugJun05
 THREADS=6
 
 HOST=localhost
@@ -10,12 +10,12 @@ PORT=27017
 
 #SMALL
 #TIME=3600
-TIME=180		       
+TIME=3800		       
 
 node schemaTest.js --batchSize 100 --numAircraft 5000 --docSize 1 --numParaBatch $THREADS --start "2016-01-01T00:00:00.000-0500" --totalSeconds $TIME  --host $HOST --port $PORT --testName $TESTNAME --preAggS false  --lambda 1 --lTrackmem false
-#node schemaTest.js --batchSize 100 --numAircraft 5000 --docSize 1 --numParaBatch $THREADS --start "2016-01-01T00:00:00.000-0500" --totalSeconds $TIME  --host $HOST --port $PORT --testName $TESTNAME --preAggS false  --lambda 60 --lTrackmem
-#node schemaTest.js --batchSize 100 --numAircraft 5000 --docSize 10 --numParaBatch $THREADS --start "2016-01-01T00:00:00.000-0500" --totalSeconds $TIME --host $HOST --port $PORT --testName $TESTNAME --preAggS true --lambda 1 --lTrackmem false
-#node schemaTest.js --batchSize 100 --numAircraft 5000 --docSize 60 --numParaBatch $THREADS --start "2016-01-01T00:00:00.000-0500" --totalSeconds $TIME --host $HOST --port $PORT --testName $TESTNAME --preAggS true --lambda 1 --lTrackmem false
+node schemaTest.js --batchSize 100 --numAircraft 5000 --docSize 1 --numParaBatch $THREADS --start "2016-01-01T00:00:00.000-0500" --totalSeconds $TIME  --host $HOST --port $PORT --testName $TESTNAME --preAggS false  --lambda 60 --lTrackmem
+node schemaTest.js --batchSize 100 --numAircraft 5000 --docSize 10 --numParaBatch $THREADS --start "2016-01-01T00:00:00.000-0500" --totalSeconds $TIME --host $HOST --port $PORT --testName $TESTNAME --preAggS true --lambda 1 --lTrackmem false
+node schemaTest.js --batchSize 100 --numAircraft 5000 --docSize 60 --numParaBatch $THREADS --start "2016-01-01T00:00:00.000-0500" --totalSeconds $TIME --host $HOST --port $PORT --testName $TESTNAME --preAggS true --lambda 1 --lTrackmem false
 
 #MEDIUM - 1 day
 TIME=86400			

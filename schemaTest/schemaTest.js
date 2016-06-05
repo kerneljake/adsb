@@ -350,74 +350,109 @@ var queryTest = {
 	    queryMany: [
 		// Stage 1
 		{
-		    $unwind: "$events"
+		    $project: { 
+			"_id" : 0,
+			"icao" : 1,
+			"hour" : {"$hour" : "$ts"},
+			"sumS" : {"$sum" : "$events.s"},
+			"countS" : {"$size" : "$events"}
+		    }
 		},
 
 		// Stage 2
 		{
-		    $project: {
-			"hour" : {$hour : "$events.t"},
-			"s" : "$events.s"
+		    $group: { 
+			"_id" : "$hour", 
+			"totalSpeed" : {
+			    "$sum" : "$sumS"
+			},
+			"count" : {"$sum" : "$countS"}
 		    }
 		},
 
 		// Stage 3
 		{
-		    $group: {
-			_id : "$hour",
-			avgSpeed : {$avg : "$s"}
-		    }
-		},
-
-		// Stage 4
-		{
-		    $project: {
-			"_id" : 0,
-			"hour" : "$_id",
-			"avgSpeed" : "$avgSpeed"
+		    $project: { 
+			"_id" : 0, 
+			"hour" : "$_id", 
+			"avgSpeed" : {"$divide" : ["$totalSpeed", "$count"]}
 		    }
 		}
+
 	    ],
 	    queryPreAgg:   [
 		// Stage 1
 		{
-		    $group: {
-			"_id" : "$icao",
-			"speedTotal" : {
-			    "$sum" : "$eSTotal"
-			}, 
-			"countTotal" : {
-			    "$sum" : "$eCount"
-			}
+		    $project: { 
+			"_id" : 0,
+			"icao" : 1,
+			"hour" : {"$hour" : "$ts"},
+			"sumS" : "$eSTotal",
+			"countS" : "$eCount"
 		    }
 		},
 
 		// Stage 2
 		{
-		    $project: {
-      			_id : 0,
-      			"icao" : "$_id",
-      			"avgSpeed": {"$divide" : ["$speedTotal", "$countTotal"]}
+		    $group: { 
+			"_id" : "$hour", 
+			"totalSpeed" : {
+			    "$sum" : "$sumS"
+			},
+			"count" : {"$sum" : "$countS"}
 		    }
-		}      
-	    ],
-	    lambda : [
-		// Stage 1
-		{
-		    $sort: { ts : -1}
-		},
-
-		// Stage 2
-		{
-		    $limit: config.numAircraft
 		},
 
 		// Stage 3
 		{
+		    $project: { 
+			"_id" : 0, 
+			"hour" : "$_id", 
+			"avgSpeed" : {"$divide" : ["$totalSpeed", "$count"]}
+		    }
+		}
+	    ],
+	    lambda : [
+
+		// Stage 1
+		{
+		    $sort: {
+			ts : -1
+		    }
+		},
+		
+		// Stage 2
+		{
+		    $limit: 5000
+		},
+		
+		// Stage 3
+		{
+		    $unwind: "$hoursTotal"
+		},
+
+		// Stage 4
+		{
+		    $group: {
+			"_id" : "$hoursTotal.hour",
+			"sTotal" : {"$sum" : "$hoursTotal.sTotal"},
+			"sCount" : {"$sum" : "$hoursTotal.sCount"}
+		    }
+		},
+
+		// Stage 5
+		{
+		    $match: {
+			"sCount" : {"$gt" : 0}
+		    }
+		},
+
+		// Stage 6
+		{
 		    $project: {
 			"_id" : 0,
-			"icao" : 1,
-			"avgSpeed" : {"$divide" : ["$grandTotalSpeed", "$grandEventCount"]}
+			"hour" : "$_id",
+			"avgSpeed" : {"$divide" : ["$sTotal" , "$sCount"]}
 		    }
 		}
 	    ]
