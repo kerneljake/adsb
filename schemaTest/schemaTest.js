@@ -875,7 +875,7 @@ function logTestEnd(logCol, callback) {
 
 function executeQuery(dataCol, lCol, logTestCol, query, callback) {
 
-    var queryRes = {};
+    var queryRes = {success : null};
     var aggPipeline;
     var collection;
 
@@ -901,7 +901,7 @@ function executeQuery(dataCol, lCol, logTestCol, query, callback) {
     }
     queryRes.query = JSON.stringify(aggPipeline);
     
-    var aggStream = collection.aggregate(aggPipeline, {cursor : {batchSize : 100}, allowDiskUse : true}).stream();
+    var aggStream = collection.aggregate(aggPipeline, {cursor : {batchSize : 100}, allowDiskUse : true, maxTimeMS : 3600000}).stream();
 
     aggStream.on('data', function(doc) {
 	console.log("Aggregation Result: %j", doc);
@@ -910,12 +910,14 @@ function executeQuery(dataCol, lCol, logTestCol, query, callback) {
 
     aggStream.on('error', function (doc) {
 	console.log("Query failed: %j", doc);
-	callback(doc, false);
+	//	callback(doc, false);
+	// Don't invoke callback here as 'end' will also be called
+	queryResult.success = false;
     });
 
     aggStream.on('end', function() {
 	queryRes.queryEnd = new Date();
-	queryRes.success = true;
+	queryRes.success = (queryRes.success === null) ? true : false;
 	// save results to MongoDB
 	queryRes.testDuration = queryRes.queryEnd.valueOf() - queryRes.queryStart.valueOf(); // milliseconds
 

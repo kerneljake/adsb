@@ -5,7 +5,7 @@ db.tests.aggregate(
     // Stage 1
     {
       $match: { 
-          "argv.testName" : "debugJun05", 
+          "argv.testName" : "complete06Jun", 
           "testCompleted" : true, 
           "queryResult" : {
               "$exists" : true
@@ -54,7 +54,7 @@ db.tests.aggregate(
                   "$queryResult", 
                   1
               ]
-          },
+          }, 
           "ten" : {
               "$arrayElemAt" : [
                   "$queryResult", 
@@ -75,7 +75,7 @@ db.tests.aggregate(
       $project: { 
           "totalSeconds" : 1, 
           "oneDuration" : "$one.testDuration", 
-          "lambdaDuration" : "$lambda.testDuration",
+          "lambdaDuration" : "$lambda.testDuration", 
           "tenDuration" : "$ten.testDuration", 
           "sixtyDuration" : "$sixty.testDuration"
       }

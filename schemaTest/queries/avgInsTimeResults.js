@@ -5,7 +5,7 @@ db.tests.aggregate(
     // Stage 1
     {
       $match: { 
-          "argv.testName" : "debugJun05", 
+          "argv.testName" : "complete06Jun", 
           "testCompleted" : true
       }
     },
@@ -82,7 +82,7 @@ db.tests.aggregate(
       $project: { 
           "totalSeconds" : 1, 
           "oneInsRate" : "$one.avgInsRate", 
-          "lambdaInsRate" : "$lambda.avgInsRate",
+          "lambdaInsRate" : "$lambda.avgInsRate", 
           "tenInsRate" : "$ten.avgInsRate", 
           "sixtyInsRate" : "$sixty.avgInsRate"
       }
