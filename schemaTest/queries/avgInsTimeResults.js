@@ -5,7 +5,7 @@ db.tests.aggregate(
     // Stage 1
     {
       $match: { 
-          "argv.testName" : "debug", 
+          "argv.testName" : "debugJun05", 
           "testCompleted" : true
       }
     },
@@ -46,30 +46,52 @@ db.tests.aggregate(
 
     // Stage 5
     {
-      $project: {
-        "totalSeconds" : "$_id",
-        "_id" : 0,
-        "insRate" : 1,
-        "one" : {$arrayElemAt : ["$insRate", 0]},
-        "ten" : {$arrayElemAt : ["$insRate", 1]},
-        "sixty" : {$arrayElemAt : ["$insRate", 2]}
+      $project: { 
+          "totalSeconds" : "$_id", 
+          "_id" : 0, 
+          "insRate" : 1, 
+          "one" : {
+              "$arrayElemAt" : [
+                  "$insRate", 
+                  0
+              ]
+          }, 
+          "lambda" : {
+              "$arrayElemAt" : [
+                  "$insRate", 
+                  1
+              ]
+          }, 
+          "ten" : {
+              "$arrayElemAt" : [
+                  "$insRate", 
+                  2
+              ]
+          }, 
+          "sixty" : {
+              "$arrayElemAt" : [
+                  "$insRate", 
+                  3
+              ]
+          }
       }
     },
 
     // Stage 6
     {
-      $project: {
-         "totalSeconds" : 1,
-         "oneInsRate" : "$one.avgInsRate",
-         "tenInsRate" : "$ten.avgInsRate",
-         "sixtyInsRate" : "$sixty.avgInsRate"
+      $project: { 
+          "totalSeconds" : 1, 
+          "oneInsRate" : "$one.avgInsRate", 
+          "lambdaInsRate" : "$lambda.avgInsRate",
+          "tenInsRate" : "$ten.avgInsRate", 
+          "sixtyInsRate" : "$sixty.avgInsRate"
       }
     },
 
     // Stage 7
     {
-      $sort: {
-         "totalSeconds" : 1
+      $sort: { 
+          "totalSeconds" : 1
       }
     }
 

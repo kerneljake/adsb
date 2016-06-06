@@ -5,9 +5,11 @@ db.tests.aggregate(
     // Stage 1
     {
       $match: { 
-          "argv.testName" : "debug", 
-          "testCompleted" : true,
-          "queryResult" : {$exists : true}
+          "argv.testName" : "debugJun05", 
+          "testCompleted" : true, 
+          "queryResult" : {
+              "$exists" : true
+          }
       }
     },
 
@@ -18,44 +20,71 @@ db.tests.aggregate(
 
     // Stage 3
     {
-      $match: {
+      $match: { 
           "queryResult.name" : "Average speed per hour"
       }
     },
 
     // Stage 4
     {
-      $group: {
-         _id : "$totalSeconds",
-         queryResult : {$push : {testDuration : "$queryResult.testDuration", docSize : "$docSize"}}
+      $group: { 
+          "_id" : "$totalSeconds", 
+          "queryResult" : {
+              "$push" : {
+                  "testDuration" : "$queryResult.testDuration", 
+                  "docSize" : "$docSize"
+              }
+          }
       }
     },
 
     // Stage 5
     {
-      $project: {
-         _id : 0,
-         totalSeconds : "$_id",
-         one: {$arrayElemAt : ["$queryResult", 0]},
-         ten: {$arrayElemAt : ["$queryResult", 1]},
-         sixty: {$arrayElemAt : ["$queryResult", 2]}
+      $project: { 
+          "_id" : 0, 
+          "totalSeconds" : "$_id", 
+          "one" : {
+              "$arrayElemAt" : [
+                  "$queryResult", 
+                  0
+              ]
+          }, 
+          "lambda" : {
+              "$arrayElemAt" : [
+                  "$queryResult", 
+                  1
+              ]
+          }, 
+          "ten" : {
+              "$arrayElemAt" : [
+                  "$queryResult", 
+                  2
+              ]
+          }, 
+          "sixty" : {
+              "$arrayElemAt" : [
+                  "$queryResult", 
+                  3
+              ]
+          }
       }
     },
 
     // Stage 6
     {
-      $project: {
-         totalSeconds : 1,
-         oneDuration: "$one.testDuration",
-         tenDuration: "$ten.testDuration",
-         sixtyDuration: "$sixty.testDuration",
+      $project: { 
+          "totalSeconds" : 1, 
+          "oneDuration" : "$one.testDuration", 
+          "lambdaDuration": "$lambda.testDuration",
+          "tenDuration" : "$ten.testDuration", 
+          "sixtyDuration" : "$sixty.testDuration"
       }
     },
 
     // Stage 7
     {
-      $sort: {
-         "totalSeconds" : 1
+      $sort: { 
+          "totalSeconds" : 1
       }
     }
 
