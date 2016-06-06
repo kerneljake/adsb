@@ -1,7 +1,7 @@
 var Step = require('step'),
     _und = require('underscore'),
     memTracker = require('./lambdaTracker.js'),
-    ObjectID = require('MongoDB').ObjectID;
+    ObjectID = require('mongodb').ObjectID;
 
 var self = {
     sAggPipeline : [
