@@ -44,7 +44,7 @@ var config = {
     lambda: setCommandLineValue("lambda", argvObj),
 
     testCompleted: false,
-    insertReportInterval: 100,
+    insertReportInterval: 10000,
     lastReportCount: 0,
 
     threadsRunning: 0,
@@ -77,7 +77,8 @@ var config = {
 	"s" : [0, 660],
 	"v" : [0, 300] 
     },
-    lambdaIndexes : [ {key: {ts : 1, icao : 1}, name: "icao_ts_1"} ]
+    // This is the index on the lambda collection required to support the aggregation queries
+    lambdaIndexes : [ {key: {ts : 1, icao : 1}, name: "ts_icao_1"} ]
 
 };
 
@@ -93,7 +94,11 @@ config.lambdaQLen = Math.min(config.batchSize, config.numAircraft);
 
 
 var queryTest = {
+    // This index is required to support the aggregation queries
     indexes : [ {key: {ts : 1}, name: "ts_1"} ],
+    // If a lambda collection is used, but the memory tracker is not used, then we need to index icao to support the queries required
+    // to build the lambda document
+    lambdaIndexes : [ {key: {ts : 1, icao: 1}, name: "ts_icao_1"} ], 
     queries : [
 	{
 	    name: "Avg 10 min speed - cold cache",
@@ -794,7 +799,7 @@ function performTests(dataCol, lambdaCol, callback) {
     
     var bQueue = [];
     var lambdaQueue = [];
-    var lTracker = (config.lambda > 1) ? {} : null;
+    var lTracker = (config.lTrackMem) ? {} : null;
 
     fillBatchQueue(bQueue);
     
@@ -830,9 +835,11 @@ function dbColStats(dataCol, callback) {
 
 function buildIndexes(dataCol, lCol, callback) {
 
+    var dataIndexes = ((config.lambda > 1) && !config.lTrackMem) ? queryTest.lambdaIndexes : queryTest.indexes;
+
     Step (
 	function createIndexes() {
-	    dataCol.createIndexes(queryTest.indexes, this.parallel());
+	    dataCol.createIndexes(dataIndexes, this.parallel());
 	    lCol.createIndexes(config.lambdaIndexes, this.parallel());
 	},
 	function done (err, dResult, lResult) {

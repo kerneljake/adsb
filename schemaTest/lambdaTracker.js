@@ -56,9 +56,9 @@ var self = {
 	}
 	else
 	    self.createNewLambda(map, icao, event.t);
-    },
+    }
 
-    foo: function() {console.log("hello");}
+//    foo: function() {console.log("hello");}
     
 };
 

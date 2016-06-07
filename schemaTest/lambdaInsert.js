@@ -43,12 +43,12 @@ var self = {
 	else
 	Step (
 	    function getSumsAndStart() {
-		console.log("START of aggregate and findOne");
+//		console.log("START of aggregate and findOne");
 		self.aggregateRange(dCol, mData.icao, prevStartTS, startTS, this.parallel()); //calculate the values for the current interval
 		lCol.findOne({"icao" : mData.icao, "ts" : prevStartTS}, this.parallel()); // get the previous lambda doc
 	    },
 	    function queueUpdate(err, aggResult, previousAgg) {
-		console.log("END of aggregate and findOne");
+//		console.log("END of aggregate and findOne");
 		if (err) {
 		    console.log("queueUpdate Error: %j", err);
 		    callback(err, null);
@@ -92,7 +92,7 @@ var self = {
 	    writeArray.push.apply(writeArray, queue);
 	    queue.length = 0;
 
-	    console.log("Writing lambda queue. Length: ", writeArray.length);
+//	    console.log("Writing lambda queue. Length: ", writeArray.length);
 	    col.bulkWrite(writeArray, {ordered: false}, function (err, result) {
 		if (err) {
 		    console.log("Error - lambda bulkWrite: %j", err);
