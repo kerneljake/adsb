@@ -5,8 +5,8 @@ db.tests.aggregate(
     // Stage 1
     {
       $match: { 
-          "argv.testName" : "complete06Jun-2", 
-          "testCompleted" : true
+          "argv.testName" : "complete07Jun", 
+          "testCompleted" : true, 
       }
     },
 
@@ -20,7 +20,108 @@ db.tests.aggregate(
           "numInserted" : 1, 
           "testTimeSec" : 1, 
           "avgInsRate" : 1, 
-          "testStartTime" : 1
+          "testStartTime" : 1, 
+          "lambda" : 1, 
+          "preAggS" : 1, 
+          "lTrackMem" : 1, 
+          "testType" : {
+              "$cond" : {
+                  "if" : {
+                      "$and" : [
+                          {
+                              "$eq" : [
+                                  "$docSize", 
+                                  1
+                              ]
+                          }, 
+                          {
+                              "$eq" : [
+                                  "$lambda", 
+                                  1
+                              ]
+                          }
+                      ]
+                  }, 
+                  "then" : "one", 
+                  "else" : {
+                      "$cond" : {
+                          "if" : {
+                              "$and" : [
+                                  {
+                                      "$eq" : [
+                                          "$docSize", 
+                                          1
+                                      ]
+                                  }, 
+                                  {
+                                      "$ne" : [
+                                          "$lambda", 
+                                          1
+                                      ]
+                                  }, 
+                                  {
+                                      "$eq" : [
+                                          "$lTrackMem", 
+                                          false
+                                      ]
+                                  }
+                              ]
+                          }, 
+                          "then" : "lambda", 
+                          "else" : {
+                              "$cond" : {
+                                  "if" : {
+                                      "$and" : [
+                                          {
+                                              "$eq" : [
+                                                  "$docSize", 
+                                                  1
+                                              ]
+                                          }, 
+                                          {
+                                              "$ne" : [
+                                                  "$lambda", 
+                                                  1
+                                              ]
+                                          }, 
+                                          {
+                                              "$eq" : [
+                                                  "$lTrackMem", 
+                                                  true
+                                              ]
+                                          }
+                                      ]
+                                  }, 
+                                  "then" : "lambdaMem", 
+                                  "else" : {
+                                      "$cond" : {
+                                          "if" : {
+                                              "$eq" : [
+                                                  "$docSize", 
+                                                  10
+                                              ]
+                                          }, 
+                                          "then" : "ten", 
+                                          "else" : {
+                                              "$cond" : {
+                                                  "if" : {
+                                                      "$eq" : [
+                                                          "$docSize", 
+                                                          60
+                                                      ]
+                                                  }, 
+                                                  "then" : "sixty", 
+                                                  "else" : "other"
+                                              }
+                                          }
+                                      }
+                                  }
+                              }
+                          }
+                      }
+                  }
+              }
+          }
       }
     },
 
@@ -38,7 +139,10 @@ db.tests.aggregate(
           "insRate" : {
               "$push" : {
                   "docSize" : "$docSize", 
-                  "avgInsRate" : "$avgInsRate"
+                  "lambda" : "$lambda", 
+                  "preAggS" : "$preAggS", 
+                  "avgInsRate" : "$avgInsRate", 
+                  "testType" : "$testType"
               }
           }
       }
@@ -51,28 +155,64 @@ db.tests.aggregate(
           "_id" : 0, 
           "insRate" : 1, 
           "one" : {
-              "$arrayElemAt" : [
-                  "$insRate", 
-                  0
-              ]
+              "$filter" : {
+                  "input" : "$insRate", 
+                  "as" : "result", 
+                  "cond" : {
+                      "$eq" : [
+                          "$$result.testType", 
+                          "one"
+                      ]
+                  }
+              }
           }, 
           "lambda" : {
-              "$arrayElemAt" : [
-                  "$insRate", 
-                  1
-              ]
+              "$filter" : {
+                  "input" : "$insRate", 
+                  "as" : "result", 
+                  "cond" : {
+                      "$eq" : [
+                          "$$result.testType", 
+                          "lambda"
+                      ]
+                  }
+              }
+          }, 
+          "lambdaMem" : {
+              "$filter" : {
+                  "input" : "$insRate", 
+                  "as" : "result", 
+                  "cond" : {
+                      "$eq" : [
+                          "$$result.testType", 
+                          "lambdaMem"
+                      ]
+                  }
+              }
           }, 
           "ten" : {
-              "$arrayElemAt" : [
-                  "$insRate", 
-                  2
-              ]
+              "$filter" : {
+                  "input" : "$insRate", 
+                  "as" : "result", 
+                  "cond" : {
+                      "$eq" : [
+                          "$$result.testType", 
+                          "ten"
+                      ]
+                  }
+              }
           }, 
           "sixty" : {
-              "$arrayElemAt" : [
-                  "$insRate", 
-                  3
-              ]
+              "$filter" : {
+                  "input" : "$insRate", 
+                  "as" : "result", 
+                  "cond" : {
+                      "$eq" : [
+                          "$$result.testType", 
+                          "sixty"
+                      ]
+                  }
+              }
           }
       }
     },
@@ -81,14 +221,52 @@ db.tests.aggregate(
     {
       $project: { 
           "totalSeconds" : 1, 
-          "oneInsRate" : "$one.avgInsRate", 
-          "lambdaInsRate" : "$lambda.avgInsRate", 
-          "tenInsRate" : "$ten.avgInsRate", 
-          "sixtyInsRate" : "$sixty.avgInsRate"
+          "oneInsRate" : {
+              "$arrayElemAt" : [
+                  "$one", 
+                  0
+              ]
+          }, 
+          "lambdaInsRate" : {
+              "$arrayElemAt" : [
+                  "$lambda", 
+                  0
+              ]
+          }, 
+          "lambdaMemInsRate" : {
+              "$arrayElemAt" : [
+                  "$lambdaMem", 
+                  0
+              ]
+          }, 
+          "tenInsRate" : {
+              "$arrayElemAt" : [
+                  "$ten", 
+                  0
+              ]
+          }, 
+          "sixtyInsRate" : {
+              "$arrayElemAt" : [
+                  "$sixty", 
+                  0
+              ]
+          }
       }
     },
 
     // Stage 7
+    {
+      $project: { 
+          "totalSeconds" : 1, 
+          "oneInsRate" : "$oneInsRate.avgInsRate", 
+          "lambdaInsRate" : "$lambdaInsRate.avgInsRate", 
+          "lambdaMemInsRate" : "$lambdaMemInsRate.avgInsRate", 
+          "tenInsRate" : "$tenInsRate.avgInsRate", 
+          "sixtyInsRate" : "$sixtyInsRate.avgInsRate"
+      }
+    },
+
+    // Stage 8
     {
       $sort: { 
           "totalSeconds" : 1

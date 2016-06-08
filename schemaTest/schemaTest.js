@@ -42,6 +42,7 @@ var config = {
     port: setCommandLineValue("port", argvObj),
     preAggS: setCommandLineValue("preAggS", argvObj),           // Sum the speed (s) as a top level field to improve query performance
     lambda: setCommandLineValue("lambda", argvObj),
+    lTrackMem: setCommandLineValue("lTrackMem", argvObj),
 
     testCompleted: false,
     insertReportInterval: 10000,
