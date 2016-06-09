@@ -5,12 +5,12 @@ db.tests.aggregate(
     // Stage 1
     {
       $match: { 
-          "argv.testName" : "debug", 
+          "argv.testName" : "complete08Jun", 
           "testCompleted" : true, 
           "queryResult" : {
               "$exists" : true
-          },
-           "testStartTime" : {
+          }, 
+          "testStartTime" : {
               "$gt" : ISODate("2016-06-08T00:00:00.000+0000")
           }
       }
@@ -18,7 +18,7 @@ db.tests.aggregate(
 
     // Stage 2
     {
-      $project: {
+      $project: { 
           "_id" : 0, 
           "testName" : "$argv.testName", 
           "docSize" : 1, 
@@ -30,7 +30,7 @@ db.tests.aggregate(
           "lambda" : 1, 
           "preAggS" : 1, 
           "lTrackMem" : 1, 
-          "queryResult" : 1,
+          "queryResult" : 1, 
           "testType" : {
               "$cond" : {
                   "if" : {
@@ -151,7 +151,7 @@ db.tests.aggregate(
           "queryResult" : {
               "$push" : {
                   "testDuration" : "$queryResult.testDuration", 
-                  "docSize" : "$docSize",
+                  "docSize" : "$docSize", 
                   "lambda" : "$lambda", 
                   "preAggS" : "$preAggS", 
                   "testType" : "$testType"
@@ -165,39 +165,64 @@ db.tests.aggregate(
       $project: { 
           "_id" : 0, 
           "totalSeconds" : "$_id", 
-              "one" : {
+          "one" : {
               "$filter" : {
-                 "input" : "$queryResult",
-                 "as" : "result",
-                  "cond" : {"$eq" : ["$$result.testType", "one"]}
+                  "input" : "$queryResult", 
+                  "as" : "result", 
+                  "cond" : {
+                      "$eq" : [
+                          "$$result.testType", 
+                          "one"
+                      ]
+                  }
               }
           }, 
           "lambda" : {
               "$filter" : {
-                 "input" : "$queryResult",
-                 "as" : "result",
-                  "cond" : {"$eq" : ["$$result.testType", "lambda"]}
+                  "input" : "$queryResult", 
+                  "as" : "result", 
+                  "cond" : {
+                      "$eq" : [
+                          "$$result.testType", 
+                          "lambda"
+                      ]
+                  }
               }
           }, 
           "lambdaMem" : {
               "$filter" : {
-                 "input" : "$queryResult",
-                 "as" : "result",
-                  "cond" : {"$eq" : ["$$result.testType", "lambdaMem"]}
+                  "input" : "$queryResult", 
+                  "as" : "result", 
+                  "cond" : {
+                      "$eq" : [
+                          "$$result.testType", 
+                          "lambdaMem"
+                      ]
+                  }
               }
           }, 
           "ten" : {
               "$filter" : {
-                 "input" : "$queryResult",
-                 "as" : "result",
-                  "cond" : {"$eq" : ["$$result.testType", "ten"]}
+                  "input" : "$queryResult", 
+                  "as" : "result", 
+                  "cond" : {
+                      "$eq" : [
+                          "$$result.testType", 
+                          "ten"
+                      ]
+                  }
               }
           }, 
           "sixty" : {
               "$filter" : {
-                 "input" : "$queryResult",
-                 "as" : "result",
-                  "cond" : {"$eq" : ["$$result.testType", "sixty"]}
+                  "input" : "$queryResult", 
+                  "as" : "result", 
+                  "cond" : {
+                      "$eq" : [
+                          "$$result.testType", 
+                          "sixty"
+                      ]
+                  }
               }
           }
       }
@@ -205,13 +230,38 @@ db.tests.aggregate(
 
     // Stage 7
     {
-      $project: {
+      $project: { 
           "totalSeconds" : 1, 
-          "one" : {"$arrayElemAt" : ["$one", 0]}, 
-          "lambda" : {"$arrayElemAt" : ["$lambda", 0]}, 
-          "lambdaMem" : {"$arrayElemAt" : ["$lambdaMem", 0]}, 
-          "ten" : {"$arrayElemAt" : ["$ten", 0]}, 
-          "sixty" : {"$arrayElemAt" : ["$sixty", 0]}
+          "one" : {
+              "$arrayElemAt" : [
+                  "$one", 
+                  0
+              ]
+          }, 
+          "lambda" : {
+              "$arrayElemAt" : [
+                  "$lambda", 
+                  0
+              ]
+          }, 
+          "lambdaMem" : {
+              "$arrayElemAt" : [
+                  "$lambdaMem", 
+                  0
+              ]
+          }, 
+          "ten" : {
+              "$arrayElemAt" : [
+                  "$ten", 
+                  0
+              ]
+          }, 
+          "sixty" : {
+              "$arrayElemAt" : [
+                  "$sixty", 
+                  0
+              ]
+          }
       }
     },
 

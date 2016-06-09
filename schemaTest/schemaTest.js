@@ -920,7 +920,7 @@ function executeQuery(dataCol, lCol, logTestCol, query, callback) {
 	console.log("Query failed: %j", doc);
 	//	callback(doc, false);
 	// Don't invoke callback here as 'end' will also be called
-	queryResult.success = false;
+	queryRes.success = false;
     });
 
     aggStream.on('end', function() {
