@@ -79,8 +79,8 @@ var config = {
 	"v" : [0, 300] 
     },
     // This is the index on the lambda collection required to support the aggregation queries
-    lambdaIndexes : [ {key: {ts : 1, icao : 1}, name: "ts_icao_1"} ]
-
+    lambdaIndexes : [ {key: {ts : 1, icao : 1}, name: "ts_icao_1"} ],
+    stats : {}
 };
 
 process.env.UV_THREADPOOL_SIZE = config.numParaBatch + 4;
@@ -828,7 +828,7 @@ function dbColStats(dataCol, callback) {
 	    console.log("Get Collection Stats Error: %j", err);
 	}
 	else {
-	    config.stats = stats;
+	    config.stats[dataCol.collectionName] = stats;
 	    callback(err, stats);
 	}
     });
@@ -987,9 +987,10 @@ function executeLoadTest(dataCol, testLogCol, lambdaCol, callback) {
 	    if (err) {
 		console.log("Error: " + err);
 	    }
-	    dbColStats(dataCol, this);
+	    dbColStats(dataCol, this.parallel());
+	    dbColStats(lambdaCol, this.parallel());
 	},
-	function logTestResults(err, result) {
+	function logTestResults(err, result1, result2) {
 	    if (err) {
 		console.log("Error: " + err);
 	    }

@@ -289,3 +289,6 @@ db.tests.aggregate(
   // Created with 3T MongoChef, the GUI for MongoDB - http://3t.io/mongochef
 
 );
+
+
+db.tests.find({"argv.testName" : "complete08Jun", "testCompleted" : true}, {_id: 0, "argv.testName" : 1, docSize : 1, "lambda" : 1, "lTrackMem": 1, totalSeconds: 1, numIn00serted: 1, testTimeSec: 1, avgInsRate: 1, "stats.size": 1, "stats.size" : 1, "stats.storageSize": 1, "stats.avgObjSize": 1, "stats.count": 1, "stats.totalIndexSize": 1,"queryResult.name": 1, "queryResult.count": 1, "queryResult.testDuration" : 1}).sort({totalSeconds : 1, lambda : 1, lTrackMem: 1})

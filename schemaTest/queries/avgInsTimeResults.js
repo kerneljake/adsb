@@ -5,8 +5,8 @@ db.tests.aggregate(
     // Stage 1
     {
       $match: { 
-          "argv.testName" : "complete07Jun", 
-          "testCompleted" : true, 
+          "argv.testName" : "complete08Jun", 
+          "testCompleted" : true
       }
     },
 
