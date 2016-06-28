@@ -19,19 +19,23 @@ FLUSH_INTERVAL = 5
 FLUSH_MESSAGE_COUNT = 50
 # database config
 DATABASE = 'adsb'
-COLLECTION = 'testing'
+COLLECTION = 'readings'
 URI = 'mongodb://localhost:27017/'
 ############ END CONFIG #############
 
 def flush_buffer():
 	bulk = collection.initialize_unordered_bulk_op()
 	for key in buffer:
-		update_command = {"$set": { "icao": buffer[key]['icao']}, "$setOnInsert": {"ts": buffer[key]['ts']}}
+		insert_doc = {"icao": buffer[key]['icao'], "t": buffer[key]['ts']}
 		if 'callsign' in buffer[key]:
-			update_command["$set"]['callsign'] = buffer[key]['callsign']
+			insert_doc['callsign'] = buffer[key]['callsign']
 		if 'events' in buffer[key] and len(buffer[key]['events']) > 0:
-			update_command["$push"] = {"events": {"$each": buffer[key]['events']}}
-		bulk.find({"_id": key}).upsert().update(update_command)
+			for event in buffer[key]['events']:
+				baseline = insert_doc.copy()
+				baseline.update(event) # overwrite t
+				bulk.insert(baseline)
+		else:
+			bulk.insert(insert_doc)
 	result = bulk.execute()
 	buffer.clear()
 
